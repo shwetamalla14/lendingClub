@@ -1,0 +1,281 @@
+---
+title: "R Notebook"
+output:
+  html_notebook: default
+  pdf_document:
+    latex_engine: xelatex
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+
+# This chunk shows/hides the code in your final report. When echo = TRUE, the code
+# is shown in the report. When echo = FALSE, the code is hidden from the final report.
+# We would like to see your code, so please leave the setting as is during the course.
+# This chunk will not show up in your reports, so you can safely ignore its existence.
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+The following is your first chunk to start with. Remember, you can add chunks using the menu
+above (Insert -> R) or using the keyboard shortcut Ctrl+Alt+I. A good practice is to use
+different code chunks to answer different questions. You can delete this comment if you like.
+
+Other useful keyboard shortcuts include Alt- for the assignment operator, and Ctrl+Shift+M
+for the pipe operator. You can delete these reminders if you don't want them in your report.
+
+***
+
+Let's first Load all the required libraries
+```{r}
+#setwd("C:/GDrive/chingtea/BUDT758T2020/code/timeSeries/") #Don't forget to set your working directory before you start!
+
+
+library("tidyverse")
+library("fpp3")
+library("plotly")
+library("skimr")
+library("lubridate")
+
+```
+
+```{r}
+LCOrg <-read_csv("lendingClub.csv")
+```
+
+
+```{r}
+tsLCOrg <- LCOrg %>%
+  as_tsibble(
+    key = c(state), 
+    index = date, 
+    regular = FALSE
+  )
+tsLCOrg
+```
+
+
+
+```{r}
+summary(tsLCOrg)
+```
+```{r}
+#skim(tsLCOrg)
+```
+
+```{r}
+nyEcon <-read_csv("nyEcon.csv")
+nyEcon
+```
+
+```{r}
+# tsNyOrg <- nyEcon %>%
+#  as_tsibble(
+ #   key = c(state), 
+ #   index = date, 
+  #  regular = FALSE
+ # )
+#tsNyOrg
+```
+
+
+
+```{r}
+censusDfOg <- read_csv("census.csv")
+censusDfOg
+
+
+```
+
+```{r}
+tsLCOrgPop <- data.frame(merge(tsLCOrg,censusDfOg,by="state"))
+tsLCOrgPop
+
+```
+
+```{r}
+tsLCOrgPop<- tsLCOrgPop %>% mutate(loansPerCapita = totalLoans/Population)
+tsLCOrgPop %>% filter(state=='NY')
+```
+```{r}
+nyEcon <- read_csv("nyEcon.csv")
+nyEcon
+```
+```{r}
+tsNYEcon <- read_csv("nyEcon.csv")
+
+tsNYEcon$date <-as_date(tsNYEcon$date, tz="mm/dd/yyyy") 
+
+tsNYEcon <- tsNYEcon %>%
+  as_tsibble(key=state,index=date)
+
+tsNYEcon
+```
+
+
+```{r}
+nyEcon$date <-as_date(nyEcon$date, tz="%m/%d/%y") 
+nyEcon
+```
+
+
+```{r}
+tsNyEcon <- nyEcon %>%
+  as_tsibble(key=state,index=date)
+
+tsNyEcon
+
+```
+
+```{r}
+tsNYEcon <- read_csv("nyEconOG.csv")
+
+tsNYEcon$date <-as_date(tsNYEcon$date, tz="mm/dd/yyyy") 
+
+tsNYEcon <- tsNYEcon %>%
+  as_tsibble(key=state,index=date)
+
+tsNYEcon
+
+```
+
+
+
+```{r}
+#library(lubridate)
+ nyEcon$date <- as.Date(nyEcon$date, "%d/%m/%y")
+nyEcon
+
+```
+```{r}
+tsNyEcon <- nyEcon %>%
+  as_tsibble(key=state,index=date)
+
+tsNyEcon
+```
+
+```{r}
+tsLC <- 
+  merge(tsLCOrgPop,tsNyEcon,by="state") 
+
+tsLC <- tsLC %>%
+  as_tsibble(key=state,index = date)
+
+tsLC 
+
+```
+
+#Q2. 
+#a)	Plot the loans per capita for the states within the top 10th percentile and bottom 10th percentile in terms of population. Compare the two plots and share your observations. What might be a (statistical) reason for the difference in variance?
+```{r}
+loansPerCapitaBottom<- quantile(tsLCOrgPop$Population, probs = c(0.10))
+loansPerCapitaTop<- quantile(tsLCOrgPop$Population, probs = c(0.90))
+loansPerCapitaBottom
+loansPerCapitaTop
+```
+
+```{r}
+loansPerCapitaPlot <- cbind(loansPerCapitaBottom,loansPerCapitaTop)
+
+barplot(loansPerCapitaPlot,beside=T)
+```
+#Q2.
+#b)	Create anomaly plots to compare the NY data with Massachusetts and Colorado. Use the STL decomposition and interquartile range to mark the anomalies. Compare the results. What are the differences across three states, and how do you explain them?
+
+```{r}
+#install.packages("anomalize")
+#library(anomalize)
+
+anomalyLC <- 
+  tsLCOrgPop %>% 
+ mutate(month = date(month)) %>%
+  time_decompose(loansPerCapita, method = "stl") %>%
+  anomalize(remainder, method = "iqr") %>%
+  plot_anomalies() +
+  labs(title = "Anomaly detection for the loans per capita") +
+  xlab("Year") + ylab("Total loans per capita ") +
+  scale_x_date(date_breaks = "years" , date_labels = "%y")
+
+anomalyLC
+```
+#Q2. 
+#c)	Apply STL decomposition to the loan per capita in NY.
+#i)	For the issued loans, identify/report the month in which the trend reverses.
+#ii)	What do you think is the reason for the change in trend in this month?
+
+```{r}
+plotLoanNyDecompose <- 
+  tsLC %>%
+  model(STL(loansPerCapita ~ trend(window=10) + season(window='periodic'), robust = TRUE)) %>% 
+  components() %>%
+  autoplot() +
+  xlab("Year") + ylab("Total loans per capita") +
+  ggtitle("Seasonal and Trend decomposition using Loess (STL decomposition)") +
+  scale_x_date(date_breaks = "years" , date_labels = "%y")
+ggplotly(plotLoanNyDecompose)
+```
+#Q2. 
+#d)	Create a seasonal plot and a seasonal subseries plot for NY. Share your observations. Do your observations change if you limit the data to the last three years?
+
+```{r}
+
+plotNySeason <-
+  tsLC %>%
+  gg_season(loansPerCapita, labels = "both") +
+  xlab("Year") + ylab("Total loans per capita") +
+  ggtitle("Total loans per capita over the years")
+plotNySeason
+```
+
+#subseries
+```{r}
+plotNySub <- 
+  tsLC %>% 
+  gg_subseries(loansPerCapita) +
+  ylab("Loans per capita") +
+  xlab("Year (monthly data)") +
+  ggtitle("Seasonal subseries plot: Total loans per capita")
+plotNySub
+```
+#Q2 
+#e)	Plot the autocorrelation function and partial autocorrelation function results for NY. What does the ACF plot tell you? What does the difference from the PCF plot tell?
+```{r}
+plotNyACF <-
+  tsLC %>%
+  ACF(loansPerCapita, lag_max = 48) %>%
+  autoplot() +  ggtitle("Autocorrelation function (ACF) plot for loans per capita")
+plotNyACF
+```
+#Q2 
+#f)	Create a lag plot for NY for the lags 1, 5, 10, 15, 20, 25. Discuss your observations.
+
+```{r}
+plotLoanLag <-
+  tsLC %>%
+  gg_lag(loansPerCapita, geom='point') +
+  xlab(NULL) + ylab(NULL) +
+  ggtitle("Lag plots for loan per capita data")
+ggplotly(plotLoanLag)
+```
+#Q2.
+#g)	First, plot the loans per capita in NY over time. Then, create a fifth order moving average smoothing and plot the smoothed values on the actual loan data.
+```{r}
+plotNy <-
+  tsLC %>%  select(loansPerCapita) %>%
+  autoplot() +
+  xlab("Year (yearly data)") + ylab("Loans per capita") +
+  ggtitle("Total loans per capita over the years")
+ggplotly(plotNy)
+```
+#create a fifth order moving average smoothing and plot the smoothed values on the actual loan data.
+```{r}
+fitLcARIMA <-
+  tsLCOrgPop %>%
+  model(fitArima = ARIMA(loansPerCapita ~ PDQ(5,0,0),
+              stepwise = FALSE, approximation = FALSE))
+report(fitLcARIMA)
+```
+
+
